@@ -37,9 +37,17 @@ while [ $# -gt 0 ]; do
 done
 [ $CHECK_ONLY = 1 ] && exit 0
 
-UDID=$(xcrun devicectl list devices 2>/dev/null | grep -E '[[:space:]](connected|available \(paired\))[[:space:]]' | grep -oE '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{16}' | head -1)
+# The phone, by devicectl identifier (a standard 8-4-4-4-12 UUID). Xcode remembers paired devices even
+# when they're unplugged ("unavailable"), so let devicectl filter to the reachable states instead of
+# matching column spacing and a UUID shape by hand. Override with CARDBOARDXR_UDID=... to pick a
+# specific phone when more than one is plugged in.
+UDID=${CARDBOARDXR_UDID:-$(xcrun devicectl list devices --columns Identifier \
+    --hide-default-columns --hide-headers \
+    --filter "State BEGINSWITH 'available' OR State BEGINSWITH 'connected'" 2>/dev/null \
+    | head -1 | tr -d '[:space:]')}
 if [ -z "$UDID" ]; then
     echo "No connected iPhone. Plug it in, unlock it, and trust this Mac."
+    echo "Or set CARDBOARDXR_UDID to the Identifier from: xcrun devicectl list devices"
     exit 1
 fi
 
