@@ -1,8 +1,11 @@
-# Builds an unsigned iOS .ipa when a version tag (0.0.1 or v0.0.1) is pushed, and uploads it as a
-# workflow artifact. Unsigned: re-sign it with your own Apple ID to install (AltStore, Sideloadly, ...).
+# Builds an unsigned iOS .ipa when a version tag (v0.0.1) is pushed, uploads it as a workflow
+# artifact, and attaches it to the tag's GitHub release. Unsigned: re-sign it with your own Apple ID
+# to install (AltStore, Sideloadly, ...).
 #
 # One-time setup: repo Settings > Secrets and variables > Actions, add UNITY_LICENSE (the contents of
 # a Unity .ulf), UNITY_EMAIL and UNITY_PASSWORD. See https://game.ci/docs/github/activation
+#
+# Third-party actions are pinned to full commit SHAs (the comment is the tag it was resolved from).
 name: iOS IPA
 
 on:
@@ -15,33 +18,40 @@ jobs:
   unity-export:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Set version from tag
+      # StereoBuilder reads CARDBOARDXR_VERSION (major.minor.patch) and restores ProjectSettings after.
+      - name: Version from tag
         if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          VERSION=${GITHUB_REF_NAME#v}
-          sed -i "s/^bundleVersion: .*/bundleVersion: $VERSION/" ProjectSettings/ProjectSettings.asset
+        run: echo "CARDBOARDXR_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: Library
           key: Library-iOS-${{ hashFiles('Packages/manifest.json', 'ProjectSettings/ProjectVersion.txt') }}
           restore-keys: Library-iOS-
 
-      - uses: game-ci/unity-builder@v4
+      - uses: game-ci/unity-builder@4423ee75828dff56037d1d1cfdac6b68e3a6ba00 # v4
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          CARDBOARDXR_VERSION: ${{ env.CARDBOARDXR_VERSION }}
         with:
           unityVersion: 6000.6.8f1
           targetPlatform: iOS
           buildMethod: ProjectBootstrap.StereoBuilder.BuildIos
           allowDirtyBuild: true
 
+      # A build without ARKit still compiles and runs, just with no AR, so fail loudly here.
+      - name: Check ARKit is in the Xcode project
+        run: |
+          count=$(grep -c libUnityARKit Builds/iOS/Unity-iPhone.xcodeproj/project.pbxproj || true)
+          echo "libUnityARKit references: $count"
+          test "$count" -gt 0 || { echo "::error::ARKit missing from the Xcode project"; exit 1; }
+
       # The Xcode project is written to Builds/iOS (see StereoBuilder.XcodeProject).
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: xcode-project
           path: Builds/iOS
@@ -51,9 +61,9 @@ jobs:
     needs: unity-export
     runs-on: macos-15
     permissions:
-      contents: write  # needed to create the release
+      contents: write  # needed to add the .ipa to the release
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: xcode-project
           path: Builds/iOS
@@ -71,16 +81,16 @@ jobs:
           cp -R build/CardboardXR.xcarchive/Products/Applications/*.app Payload/
           zip -qry CardboardXR-${GITHUB_REF_NAME}.ipa Payload
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: CardboardXR-ipa
           path: '*.ipa'
           if-no-files-found: error
 
-      # On a version tag, attach the raw .ipa to the GitHub Release (created if missing).
-      - name: Publish release
+      # Adds the .ipa to the tag's release, creating it if missing. No body or generate_release_notes
+      # is passed, so notes on a release made by hand (with the APK) are left alone.
+      - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: '*.ipa'
-          generate_release_notes: true
