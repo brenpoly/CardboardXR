@@ -20,17 +20,19 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      # StereoBuilder reads CARDBOARDXR_VERSION (major.minor.patch) and restores ProjectSettings after.
-      - name: Version from tag
+      # game-ci runs Unity in Docker and only passes its own env vars in, so write the version into
+      # ProjectSettings directly. The checkout is thrown away after the run; the tag pattern above
+      # guarantees three numbers.
+      - name: Set version from tag
         if: startsWith(github.ref, 'refs/tags/')
-        run: echo "CARDBOARDXR_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+        run: |
+          sed -i "s/^bundleVersion: .*/bundleVersion: ${GITHUB_REF_NAME#v}/" ProjectSettings/ProjectSettings.asset
 
       - uses: game-ci/unity-builder@4423ee75828dff56037d1d1cfdac6b68e3a6ba00 # v4
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-          CARDBOARDXR_VERSION: ${{ env.CARDBOARDXR_VERSION }}
         with:
           unityVersion: 6000.6.8f1
           targetPlatform: iOS
