@@ -26,7 +26,9 @@ jobs:
       - name: Set version from tag
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          sed -i "s/^bundleVersion: .*/bundleVersion: ${GITHUB_REF_NAME#v}/" ProjectSettings/ProjectSettings.asset
+          VERSION=${GITHUB_REF_NAME#v}
+          sed -i -E "s/^( *)bundleVersion: .*/\1bundleVersion: $VERSION/" ProjectSettings/ProjectSettings.asset
+          grep -q "^ *bundleVersion: $VERSION\$" ProjectSettings/ProjectSettings.asset || { echo "::error::bundleVersion not set"; exit 1; }
 
       - uses: game-ci/unity-builder@4423ee75828dff56037d1d1cfdac6b68e3a6ba00 # v4
         env:
